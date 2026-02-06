@@ -3,6 +3,8 @@ import { Hono } from "hono";
 
 const app = new Hono();
 
+console.log("ENV", process.env.TEST);
+
 app.get("/", (c) => {
 	return c.text("Hello Hono!");
 });
