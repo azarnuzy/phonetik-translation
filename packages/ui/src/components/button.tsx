@@ -3,10 +3,7 @@ interface ButtonProps {
 }
 export const Button = ({ label }: ButtonProps) => {
 	return (
-		<button
-			type="button"
-			style={{ background: "black", color: "white", padding: 10 }}
-		>
+		<button type="button" className="bg-red-500">
 			{label}
 		</button>
 	);
