@@ -41,3 +41,4 @@ count.txt
 .output
 .vinxi
 todos.json
+**/generated/prisma/

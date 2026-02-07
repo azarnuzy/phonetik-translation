@@ -5,12 +5,17 @@
 		"dev": "pnpm with-env tsx watch src/index.ts",
 		"build": "tsc",
 		"start": "node dist/index.js",
-		"with-env": "dotenv -e ../../.env --"
+		"with-env": "dotenv -e ../../.env --",
+		"db:migrate": "pnpm prisma migrate dev",
+		"db:generate": "pnpm prisma generate"
 	},
 	"dependencies": {
 		"@hono/node-server": "^1.19.9",
+		"@prisma/adapter-pg": "^7.3.0",
+		"@prisma/client": "^7.3.0",
 		"dotenv": "^17.2.4",
-		"hono": "^4.11.7"
+		"hono": "^4.11.7",
+		"prisma": "^7.3.0"
 	},
 	"devDependencies": {
 		"@types/node": "^20.11.17",
