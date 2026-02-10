@@ -63,5 +63,14 @@ jobs:
       - name: Build
         run: pnpm --filter=api build
 
-      - name: Deploy
-        run: echo "deploying ...."
+      # - name: Deploy
+      #   uses: appleboy/ssh-action@v1.2.0
+      #   with:
+      #     host: 103.181.142.38
+      #     username: indrazm
+      #     key: ${{ secrets.SSH_PRIVATE_KEY }}
+      #     script: |
+      #       cd live/
+      #       docker compose build
+      #       docker compose down
+      #       docker compose up -d

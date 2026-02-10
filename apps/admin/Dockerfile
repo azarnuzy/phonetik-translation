@@ -12,6 +12,9 @@ RUN pnpm install
 
 COPY . .
 
+WORKDIR /app/packages/ui
+RUN pnpm build
+
 WORKDIR /app/apps/admin
 RUN pnpm build
 
