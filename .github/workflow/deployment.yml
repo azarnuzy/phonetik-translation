@@ -1,4 +1,8 @@
 name: "Deployment Moonrepo"
+on:
+  push:
+    branches:
+      - main
 
 jobs:
   deploy:
