@@ -68,6 +68,7 @@ jobs:
         with:
           host: 103.181.142.38
           username: indrazm
+          port: 22
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd live/
