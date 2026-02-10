@@ -1,11 +1,16 @@
-name: "Deployment"
+name: "CI/CD"
+
 on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
 
 jobs:
-  deploy:
+  pr-checks:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,5 +33,35 @@ jobs:
       - name: Lint
         run: pnpm lint
 
-      - name: Type check
+      - name: Build
         run: pnpm --filter=api build
+
+      - name: Test
+        run: pnpm test
+
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Generate Prisma File
+        run: cd apps/api && pnpm prisma generate
+
+      - name: Build
+        run: pnpm --filter=api build
+
+      - name: Deploy
+        run: echo "deploying ...."
