@@ -42,3 +42,4 @@ count.txt
 .vinxi
 todos.json
 **/generated/prisma/
+.vercel
