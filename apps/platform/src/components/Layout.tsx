@@ -12,35 +12,35 @@ export function Layout({ children }: { children: ReactNode }) {
 	return (
 		<div className="min-h-screen bg-slate-50">
 			<header className="border-b border-slate-200 bg-white">
-				<div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
-					<Link to="/" className="flex items-center gap-2">
-						<span className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-600 text-white">
+				<div className="mx-auto flex max-w-5xl items-center justify-between gap-2 px-3 py-3 sm:px-4">
+					<Link to="/" className="flex min-w-0 items-center gap-2">
+						<span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-600 text-white">
 							<AudioWaveform className="h-5 w-5" />
 						</span>
-						<span>
-							<span className="block text-base font-semibold leading-tight text-slate-900">
+						<span className="min-w-0">
+							<span className="block truncate text-base font-semibold leading-tight text-slate-900">
 								Phonetik
 							</span>
-							<span className="block text-xs leading-tight text-slate-500">
+							<span className="hidden truncate text-xs leading-tight text-slate-500 sm:block">
 								From Text to Phonetic
 							</span>
 						</span>
 					</Link>
 
-					<nav className="flex items-center gap-1">
+					<nav className="flex shrink-0 items-center gap-0.5 sm:gap-1">
 						{navItems.map(({ to, label, icon: Icon, exact }) => (
 							<Link
 								key={to}
 								to={to}
-								className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+								className="flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 sm:px-3"
 								activeProps={{
 									className:
-										"flex items-center gap-1.5 rounded-lg bg-violet-100 px-3 py-2 text-sm font-medium text-violet-700",
+										"flex items-center gap-1.5 rounded-lg bg-violet-100 px-2.5 py-2 text-sm font-medium text-violet-700 sm:px-3",
 								}}
 								activeOptions={{ exact }}
 							>
 								<Icon className="h-4 w-4" />
-								{label}
+								<span className="hidden sm:inline">{label}</span>
 							</Link>
 						))}
 					</nav>
