@@ -27,6 +27,143 @@ Do all of the following:
 Respond with ONLY strict JSON, no markdown code fences, no commentary, matching exactly this shape:
 {"originalText": "the full OCR'd text as one string with original line breaks as \\n", "lines": [{"text": "line of original text", "ipa": "IPA transcription of that line"}]}`;
 
+// The model occasionally returns non-JSON, truncated JSON, or a
+// structurally-valid-but-empty payload (e.g. one line with a blank ipa).
+// Retry a few times before giving up so a single bad generation doesn't
+// surface as a hard failure to the user.
+const MAX_MODEL_ATTEMPTS = 3;
+const RETRY_DELAY_MS = 400;
+
+interface ParsedConversion {
+	originalText: string;
+	lines: { text: string; ipa: string }[];
+}
+
+function sleep(ms: number) {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Some models wrap JSON in markdown code fences despite instructions not to.
+function stripCodeFence(raw: string): string {
+	const trimmed = raw.trim();
+	const match = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+	return match ? match[1].trim() : trimmed;
+}
+
+function validateConversionShape(parsed: unknown): ParsedConversion | null {
+	if (!parsed || typeof parsed !== "object") return null;
+	const p = parsed as { originalText?: unknown; lines?: unknown };
+	if (typeof p.originalText !== "string" || !p.originalText.trim()) {
+		return null;
+	}
+	if (!Array.isArray(p.lines) || p.lines.length === 0) return null;
+
+	const lines: { text: string; ipa: string }[] = [];
+	for (const item of p.lines) {
+		if (
+			!item ||
+			typeof item !== "object" ||
+			typeof (item as { text?: unknown }).text !== "string" ||
+			typeof (item as { ipa?: unknown }).ipa !== "string"
+		) {
+			return null;
+		}
+		const text = (item as { text: string }).text.trim();
+		const ipa = (item as { ipa: string }).ipa.trim();
+		if (!text || !ipa) return null;
+		lines.push({ text, ipa });
+	}
+
+	return { originalText: p.originalText, lines };
+}
+
+async function requestConversion(dataUrl: string): Promise<ParsedConversion> {
+	let lastError = "Model returned invalid JSON";
+
+	for (let attempt = 1; attempt <= MAX_MODEL_ATTEMPTS; attempt++) {
+		let orResponse: Response;
+		try {
+			orResponse = await fetch(
+				"https://openrouter.ai/api/v1/chat/completions",
+				{
+					method: "POST",
+					headers: {
+						Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+						"Content-Type": "application/json",
+					},
+					body: JSON.stringify({
+						model: OPENROUTER_MODEL,
+						response_format: { type: "json_object" },
+						messages: [
+							{
+								role: "user",
+								content: [
+									{ type: "text", text: PROMPT },
+									{ type: "image_url", image_url: { url: dataUrl } },
+								],
+							},
+						],
+					}),
+				},
+			);
+		} catch (err) {
+			console.error(`OpenRouter fetch failed (attempt ${attempt})`, err);
+			lastError = "OCR/phonetic conversion failed upstream";
+			await sleep(RETRY_DELAY_MS * attempt);
+			continue;
+		}
+
+		if (!orResponse.ok) {
+			const errText = await orResponse.text();
+			console.error(
+				`OpenRouter error (attempt ${attempt})`,
+				orResponse.status,
+				errText,
+			);
+			lastError = "OCR/phonetic conversion failed upstream";
+			await sleep(RETRY_DELAY_MS * attempt);
+			continue;
+		}
+
+		const orJson = await orResponse.json();
+		const rawContent = orJson?.choices?.[0]?.message?.content;
+		if (!rawContent || typeof rawContent !== "string") {
+			console.error(`Empty response from model (attempt ${attempt})`);
+			lastError = "Empty response from model";
+			await sleep(RETRY_DELAY_MS * attempt);
+			continue;
+		}
+
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(stripCodeFence(rawContent));
+		} catch {
+			console.error(
+				`Model returned non-JSON content (attempt ${attempt})`,
+				rawContent,
+			);
+			lastError = "Model returned invalid JSON";
+			await sleep(RETRY_DELAY_MS * attempt);
+			continue;
+		}
+
+		const validated = validateConversionShape(parsed);
+		if (!validated) {
+			console.error(
+				`Model returned an unexpected/empty shape (attempt ${attempt})`,
+				parsed,
+			);
+			lastError = "Model returned an unexpected shape";
+			await sleep(RETRY_DELAY_MS * attempt);
+			continue;
+		}
+
+		return validated;
+	}
+
+	throw new Error(lastError);
+}
+
 Deno.serve(async (req: Request) => {
 	if (req.method === "OPTIONS") {
 		return new Response("ok", { headers: corsHeaders });
@@ -92,55 +229,17 @@ Deno.serve(async (req: Request) => {
 			? imageBase64
 			: `data:${mimeType};base64,${imageBase64}`;
 
-		const orResponse = await fetch(
-			"https://openrouter.ai/api/v1/chat/completions",
-			{
-				method: "POST",
-				headers: {
-					Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-					"Content-Type": "application/json",
-				},
-				body: JSON.stringify({
-					model: OPENROUTER_MODEL,
-					response_format: { type: "json_object" },
-					messages: [
-						{
-							role: "user",
-							content: [
-								{ type: "text", text: PROMPT },
-								{ type: "image_url", image_url: { url: dataUrl } },
-							],
-						},
-					],
-				}),
-			},
-		);
-
-		if (!orResponse.ok) {
-			const errText = await orResponse.text();
-			console.error("OpenRouter error", orResponse.status, errText);
-			return json({ error: "OCR/phonetic conversion failed upstream" }, 502);
-		}
-
-		const orJson = await orResponse.json();
-		const rawContent = orJson?.choices?.[0]?.message?.content;
-		if (!rawContent || typeof rawContent !== "string") {
-			return json({ error: "Empty response from model" }, 502);
-		}
-
-		let parsed: {
-			originalText?: string;
-			lines?: { text: string; ipa: string }[];
-		};
+		let parsed: ParsedConversion;
 		try {
-			parsed = JSON.parse(rawContent);
-		} catch {
-			console.error("Model returned non-JSON content", rawContent);
-			return json({ error: "Model returned invalid JSON" }, 502);
-		}
-
-		if (!parsed.originalText || !Array.isArray(parsed.lines)) {
-			return json({ error: "Model returned an unexpected shape" }, 502);
+			parsed = await requestConversion(dataUrl);
+		} catch (err) {
+			const message =
+				err instanceof Error ? err.message : "OCR/phonetic conversion failed";
+			console.error(
+				`requestConversion exhausted ${MAX_MODEL_ATTEMPTS} attempts:`,
+				message,
+			);
+			return json({ error: message }, 502);
 		}
 
 		const { error: insertError, data: inserted } = await supabase
