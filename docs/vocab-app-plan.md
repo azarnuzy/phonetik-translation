@@ -1,6 +1,7 @@
 # Vocab Learning App — Brainstorm & MVP Plan
 
-Status: draft v1 — 2026-07-15
+Status: revised v2 — 2026-07-15 (v1 used a custom Hono/Prisma backend; v2 moves all data +
+business logic into Supabase directly, see "Architecture change" below)
 New app: `apps/vocab` (in-app product name follows the mockup: **English Access**)
 
 ## 1. Background
@@ -14,46 +15,46 @@ The user supplied:
   Selling**, each with a Topic Vocabulary list, Phrasal Verbs, Word Formation, Word Patterns, and
   Prepositional Phrases, plus a graded exercise/answer-key page for each discourse.
 
-Goal: stand up a new app (FE + BE) in this monorepo, seeded with real content from the photos,
-using the same "silent login" (Supabase anonymous auth) pattern already used by `apps/platform`.
+Goal: stand up a new app (FE + data layer) in this monorepo, seeded with real content from the
+photos, using the same "silent login" (Supabase anonymous auth) pattern already used by
+`apps/platform`.
 
-## 2. Decisions already confirmed with the user
+## 2. Decisions confirmed with the user
 
 | Question | Decision |
 |---|---|
-| Backend approach | Extend `apps/api` (Hono + Prisma) with its own Postgres. Supabase is used **only** for anonymous auth (silent login); the FE sends the Supabase access token to the Hono API, which verifies it and uses the `sub` claim as the user id. Content + progress live in the API's own DB. |
+| Backend approach (v1) | Extend `apps/api` (Hono + Prisma) with its own Postgres, Supabase used only for auth. |
+| Backend approach (v2, current) | Drop the custom backend entirely. All content + per-user data lives in Supabase Postgres, accessed directly from `apps/vocab` via `supabase-js` + Row Level Security -- the same pattern `apps/platform` already uses for its `conversions` table. `apps/api` was reverted back to the unused starter-template stub it was before this feature. Quiz scoring (the one place that needs server-side logic to keep correct answers hidden) is a Supabase Edge Function, `submit-quiz`, mirroring the existing `process-image` function. |
 | New app name/location | `apps/vocab` |
-| Discourse 3–5 content | Not in the source material. Seed only Discourse 1 & 2 with real content; Discourse 3 (Working and Business), 4 (Community and Services), 5 (Travel and Leisure) are seeded as row placeholders marked `comingSoon: true` and rendered as locked/"Coming soon" in the UI — no invented vocabulary. |
+| Discourse 3–5 content | Not in the source material. Seed only Discourse 1 & 2 with real content; Discourse 3 (Working and Business), 4 (Community and Services), 5 (Travel and Leisure) are seeded as row placeholders marked `coming_soon = true` and rendered as locked/"Coming soon" in the UI — no invented vocabulary. |
+
+### Why the v1 → v2 switch
+
+Hosting a standalone Node/Prisma backend for a small MVP means paying for and operating a second
+service (Railway/Render/VPS) with its own Postgres, on top of Supabase (needed regardless, for
+auth). Since Supabase already provides Postgres + RLS + Edge Functions, folding everything into
+one project removes that second service entirely. The trade-off: correct quiz answers can't be
+protected by a Hono middleware anymore, so that one piece of "real" server logic moved to an Edge
+Function instead.
 
 ## 3. Architecture
 
 ```
-apps/vocab (FE)                     apps/api (BE)                  Supabase (hosted/local)
-─────────────────                   ───────────────                 ────────────────────
-Vite + React 19 +                   Hono + Prisma 7                  Auth only:
-TanStack Router +                   own Postgres (docker-compose)    - signInAnonymously()
-Tailwind v4                                                          - issues JWT (sub = user id)
-                                                                     
-ensureAnonymousSession() ────────▶  Authorization: Bearer <jwt>
-(copied from platform/lib/supabase)  │
-                                     ▼
-                              verifySupabaseJwt middleware
-                              (HS256, SUPABASE_JWT_SECRET)
-                                     │
-                                     ▼
-                              Hono routes ──▶ Prisma ──▶ Postgres
-                              (content tables + per-user progress
-                               keyed by supabaseUserId, no FK — different DB)
+apps/vocab (FE)                              Supabase (hosted/local)
+─────────────────                              ────────────────────
+Vite + React 19 +                              Auth: signInAnonymously() (silent login)
+TanStack Router + Tailwind v4                  Postgres: content tables (public read, RLS)
+                                                          + user_word_progress / user_quiz_attempts
+ensureAnonymousSession()                                 / user_stats (RLS: auth.uid() = user_id)
+(apps/vocab/src/lib/supabase.ts)               Edge Function: submit-quiz (Deno)
+        │                                        - service-role client reads quiz_options.is_correct
+        ▼                                          (RLS blocks that column-bearing table for every
+supabase-js .from(...) calls                        other caller)
+  - RLS enforces per-user access                 - inserts user_quiz_attempts, upserts user_stats
+  - content tables: select-only for anon/authenticated
 ```
 
-Why this split: it matches what the user confirmed (real BE, not just Supabase tables), reuses
-the exact silent-login mechanism already proven in `apps/platform`, and keeps `apps/api`'s
-existing Prisma/Postgres setup (currently an empty schema) as the actual home for this app's data
-instead of introducing a second parallel content store in Supabase.
-
-`SUPABASE_JWT_SECRET` is added to `apps/api`'s env. For local dev this is the standard Supabase
-CLI default (`super-secret-jwt-token-with-at-least-32-characters-long`); in production it's the
-project's real JWT secret from the Supabase dashboard.
+`apps/api` is unused again (back to its original "Hello Hono" placeholder, same as `apps/admin`).
 
 ## 4. Content model (from the material)
 
@@ -71,51 +72,60 @@ Transcription note: the photographed pages mix printed text with handwritten Ind
 meanings/examples for phrasal verbs & word formation were written in English by us based on the
 printed definitions (the material gives definitions, not example sentences, for those sections).
 The Topic Vocabulary word lists and Prepositional Phrases are taken directly from the printed
-tables. **Please review the seeded content once it exists — happy to correct any word.**
+tables. **Please review the seeded content — happy to correct any word** (it's plain SQL in
+`supabase/migrations/20260715130100_vocab_seed.sql`, easy to edit and re-run against a fresh
+project).
 
-## 5. Data model (Prisma, `apps/api`)
+## 5. Data model (Supabase Postgres, `supabase/migrations/20260715130000_vocab_schema.sql`)
 
 ```
-Discourse          id, slug, title, description, order, comingSoon
-VocabularyWord      id, discourseId, word, wordClass, meaning, example, order
-PhrasalVerb         id, discourseId, phrase, meaning, order
-WordFormationEntry  id, discourseId, baseWord, order
-WordFormationForm   id, entryId, form, partOfSpeech
-WordPattern         id, discourseId, category(ADJECTIVE|VERB|NOUN), pattern, meaning, order
-PrepositionalPhrase id, discourseId, phrase, meaning, order
-QuizQuestion        id, discourseId, category, prompt, order
-QuizOption          id, questionId, text, isCorrect
+discourses              id, slug, title, description, order, coming_soon
+vocabulary_words        id, discourse_id, word, word_class, meaning, example, order
+phrasal_verbs           id, discourse_id, phrase, meaning, order
+word_formation_entries  id, discourse_id, base_word, order
+word_formation_forms    id, entry_id, form, part_of_speech
+word_patterns           id, discourse_id, category(ADJECTIVE|VERB|NOUN), pattern, meaning, order
+prepositional_phrases   id, discourse_id, phrase, meaning, order
+quiz_questions          id, discourse_id, category, prompt, order
+quiz_options            id, question_id, text, is_correct   -- no select policy for anyone
+quiz_options_public     (view) id, question_id, text        -- what clients actually query
 
-UserWordProgress    id, supabaseUserId, vocabularyWordId, learned, saved, updatedAt
-UserQuizAttempt     id, supabaseUserId, discourseId, score, total, createdAt
-UserStats           supabaseUserId (PK), points, currentStreak, lastActiveDate
+user_word_progress      id, user_id, vocabulary_word_id, learned, saved, updated_at
+user_quiz_attempts      id, user_id, discourse_id, score, total, created_at
+user_stats              user_id (PK), points, current_streak, last_active_date
 ```
 
-`supabaseUserId` is stored as a plain `uuid` string column (no FK — it lives in Supabase's auth
-schema, a different database).
+`user_id` is a real FK to `auth.users(id)` (same database now, unlike the v1 cross-database
+design), so RLS policies use `auth.uid() = user_id` exactly like the existing `conversions` table.
 
-## 6. API surface (Hono)
+Content tables: RLS enabled, `select using (true)` for everyone (read-only reference data, only
+migrations write to them). `quiz_options` deliberately has no policy at all -- it's readable only
+by the `submit-quiz` Edge Function's service-role client. `quiz_options_public` is a view owned by
+the migration role that re-exposes `id, question_id, text` (no `is_correct`) to `anon` and
+`authenticated`.
 
-Public (content) — no auth required, but auth optional to merge in per-user progress:
-- `GET /discourses`
-- `GET /discourses/:slug`
-- `GET /discourses/:slug/vocabulary`
-- `GET /discourses/:slug/phrasal-verbs`
-- `GET /discourses/:slug/word-formation`
-- `GET /discourses/:slug/word-patterns`
-- `GET /discourses/:slug/prepositional-phrases`
-- `GET /discourses/:slug/quiz`
+## 6. Data access & the one Edge Function
 
-Authenticated (requires verified Supabase JWT):
-- `POST /words/:id/learned` `{ learned: boolean }`
-- `POST /words/:id/save` `{ saved: boolean }`
-- `GET /my-words`
-- `POST /discourses/:slug/quiz/submit` `{ answers: [...] }` → score + updates `UserStats`
-- `GET /me/stats`
+Everything else is a direct `supabase-js` call from `apps/vocab/src/lib/api.ts` (mirrors
+`apps/platform/src/lib/api.ts`):
+- `listDiscourses` / `getDiscourse` / `listVocabulary` / `listPhrasalVerbs` /
+  `listWordFormation` / `listWordPatterns` / `listPrepositionalPhrases` / `getQuiz` — plain
+  `select()` calls (some client-side aggregation for progress counts, dataset is small).
+- `setWordLearned` / `setWordSaved` — `upsert()` into `user_word_progress`.
+- `listMyWords` / `getMyStats` — `select()` with embedded foreign-table joins.
+
+`submitQuiz(slug, answers)` calls `supabase.functions.invoke("submit-quiz", ...)`. The function
+(`supabase/functions/submit-quiz/index.ts`):
+1. Verifies the caller's JWT via a Supabase client scoped to the request's `Authorization` header.
+2. Uses a **service-role** client (bypasses RLS) to look up the correct options, since
+   `quiz_options` is intentionally unreadable by anyone else.
+3. Scores the answers, inserts a `user_quiz_attempts` row, and upserts `user_stats` (points +
+   streak, same day/yesterday/reset logic as the v1 Hono version).
+4. Returns `{ score, total, accuracy, results }`.
 
 ## 7. FE screens — MVP scope
 
-In scope for MVP (v1, matches core mockup flow end-to-end):
+Unchanged from v1 (only the data layer moved):
 1. Home — streak/points, "continue learning" card, discourse list w/ progress
 2. Select Discourse (D1 & D2 unlocked, D3–5 shown locked/"coming soon")
 3. Discourse detail — progress bar + list of 5 sub-sections
@@ -135,24 +145,27 @@ scheduling, streak-break notifications.
 Identical mechanism to `apps/platform/src/lib/supabase.ts`:
 1. On app load, `ensureAnonymousSession()` calls `supabase.auth.getSession()`; if empty, calls
    `supabase.auth.signInAnonymously()`.
-2. Every API call attaches `Authorization: Bearer <access_token>` from the current Supabase
-   session.
-3. Hono middleware verifies the JWT signature (`SUPABASE_JWT_SECRET`, HS256) and expiry, reads
-   `sub` as the user id. No separate signup/login UI — matches "silent login seperti fonetik app".
+2. Every `supabase-js` call (`.from(...)`, `.functions.invoke(...)`) automatically attaches the
+   current session's access token; RLS policies key off `auth.uid()` directly. No separate
+   signup/login UI — matches "silent login seperti fonetik app".
 
-## 9. Build order
+## 9. Deploying
 
-1. ✅ This plan
-2. Prisma schema + `seed.ts` for `apps/api` (Discourse 1 & 2 real content, D3–5 stubs)
-3. Hono routes + JWT middleware
-4. `apps/vocab` scaffold (copied from `apps/platform` Vite/TanStack/Tailwind setup) + silent login
-5. Wire MVP screens to the API, smoke-test the flow end to end
+- `apps/vocab`: Vercel project (git-connected), Root Directory = `apps/vocab`, same as
+  `apps/platform`. Env: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
+- Supabase: `supabase db push` (migrations) + `supabase functions deploy submit-quiz` — both
+  already wired into `.github/workflows/deployment.yml`'s `deploy-supabase` job. One extra secret
+  needed once, via the Supabase dashboard/CLI: `supabase secrets set
+  SUPABASE_SERVICE_ROLE_KEY=...` (the function needs it to read `quiz_options.is_correct`).
+- No separate backend host needed at all.
 
 ## 10. Open items / assumptions to flag
 
 - No audio files/TTS provider specified — pronunciation playback button is stubbed as disabled in
   MVP.
-- Assumed local dev only for now (docker-compose Postgres + local Supabase); production secrets
-  are out of scope for this pass.
 - Some vocabulary entries are best-effort transcriptions of handwritten annotations — flagged
-  above, easy to correct later via the seed file since it's the single source of truth.
+  above, easy to correct later via the seed migration since it's the single source of truth.
+- Local verification in this environment used a plain (non-Supabase) Postgres with a stubbed
+  `auth` schema to check migration SQL and RLS behavior, plus `deno check` for the Edge Function --
+  there was no Docker available to run the real `supabase start` stack, so the first real
+  end-to-end test happens against an actual Supabase project.

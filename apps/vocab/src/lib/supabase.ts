@@ -48,9 +48,9 @@ export function ensureAnonymousSession(): Promise<void> {
 	return anonymousSessionPromise;
 }
 
-/** Returns the current Supabase access token, signing in anonymously first if needed. */
-export async function getAccessToken(): Promise<string | null> {
+/** Returns the current Supabase user id, signing in anonymously first if needed. */
+export async function getCurrentUserId(): Promise<string | null> {
 	await ensureAnonymousSession();
 	const { data } = await supabase.auth.getSession();
-	return data.session?.access_token ?? null;
+	return data.session?.user.id ?? null;
 }
