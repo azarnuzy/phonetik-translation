@@ -1,19 +1,38 @@
-export function speak(text: string, lang = "en-US") {
-	if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+export function speak(text: string, lang = "en-US", onEnd?: () => void) {
+	if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+		onEnd?.();
+		return;
+	}
 	window.speechSynthesis.cancel();
 	const utterance = new SpeechSynthesisUtterance(text);
 	utterance.lang = lang;
+	if (onEnd) {
+		utterance.onend = onEnd;
+		utterance.onerror = onEnd;
+	}
 	window.speechSynthesis.speak(utterance);
 }
 
-export function speakAll(texts: string[], lang = "en-US") {
-	if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+export function speakAll(texts: string[], lang = "en-US", onEnd?: () => void) {
+	if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+		onEnd?.();
+		return;
+	}
 	window.speechSynthesis.cancel();
-	for (const text of texts) {
+	texts.forEach((text, i) => {
 		const utterance = new SpeechSynthesisUtterance(text);
 		utterance.lang = lang;
+		if (onEnd && i === texts.length - 1) {
+			utterance.onend = onEnd;
+			utterance.onerror = onEnd;
+		}
 		window.speechSynthesis.speak(utterance);
-	}
+	});
+}
+
+export function stopSpeaking() {
+	if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+	window.speechSynthesis.cancel();
 }
 
 export async function copyToClipboard(text: string): Promise<boolean> {

@@ -1,10 +1,11 @@
-import { Copy, Download, Heart, Volume2 } from "lucide-react";
-import { useState } from "react";
+import { Copy, Download, Heart, Square, Volume2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import {
 	copyToClipboard,
 	downloadTextFile,
 	speak,
 	speakAll,
+	stopSpeaking,
 } from "@/lib/clientUtils";
 import type { Conversion } from "@/lib/types";
 
@@ -21,8 +22,53 @@ export function ConversionResult({
 }: ConversionResultProps) {
 	const [copiedAll, setCopiedAll] = useState(false);
 	const [copiedOriginal, setCopiedOriginal] = useState(false);
+	const [speakingTarget, setSpeakingTarget] = useState<"all" | number | null>(
+		null,
+	);
+	const speechTokenRef = useRef(0);
 
 	const lines = conversion.ipa_lines;
+
+	useEffect(() => {
+		return () => {
+			speechTokenRef.current++;
+			stopSpeaking();
+		};
+	}, []);
+
+	function stopCurrentSpeech() {
+		speechTokenRef.current++;
+		stopSpeaking();
+		setSpeakingTarget(null);
+	}
+
+	function handleSpeakAll() {
+		if (speakingTarget !== null) {
+			stopCurrentSpeech();
+			return;
+		}
+		const token = ++speechTokenRef.current;
+		setSpeakingTarget("all");
+		speakAll(
+			lines.map((l) => l.text),
+			conversion.language,
+			() => {
+				if (speechTokenRef.current === token) setSpeakingTarget(null);
+			},
+		);
+	}
+
+	function handleSpeakLine(i: number, text: string) {
+		if (speakingTarget === i) {
+			stopCurrentSpeech();
+			return;
+		}
+		const token = ++speechTokenRef.current;
+		setSpeakingTarget(i);
+		speak(text, conversion.language, () => {
+			if (speechTokenRef.current === token) setSpeakingTarget(null);
+		});
+	}
 
 	async function handleCopyAll() {
 		const ok = await copyToClipboard(lines.map((l) => l.ipa).join("\n"));
@@ -61,15 +107,18 @@ export function ConversionResult({
 				<div className="flex gap-2">
 					<button
 						type="button"
-						onClick={() =>
-							speakAll(
-								lines.map((l) => l.text),
-								conversion.language,
-							)
-						}
+						onClick={handleSpeakAll}
 						className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
 					>
-						<Volume2 className="h-4 w-4" /> Dengarkan Semua
+						{speakingTarget !== null ? (
+							<>
+								<Square className="h-4 w-4 fill-current" /> Stop
+							</>
+						) : (
+							<>
+								<Volume2 className="h-4 w-4" /> Dengarkan Semua
+							</>
+						)}
 					</button>
 					<button
 						type="button"
@@ -97,11 +146,19 @@ export function ConversionResult({
 							</span>
 							<button
 								type="button"
-								title="Klik untuk mendengarkan"
-								onClick={() => speak(line.text, conversion.language)}
+								title={
+									speakingTarget === i
+										? "Klik untuk menghentikan"
+										: "Klik untuk mendengarkan"
+								}
+								onClick={() => handleSpeakLine(i, line.text)}
 								className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-600 hover:bg-violet-200"
 							>
-								<Volume2 className="h-4 w-4" />
+								{speakingTarget === i ? (
+									<Square className="h-4 w-4 fill-current" />
+								) : (
+									<Volume2 className="h-4 w-4" />
+								)}
 							</button>
 						</li>
 					))}
