@@ -1,0 +1,9 @@
+{
+	"short_name": "English Access",
+	"name": "English Access - Learn Vocabulary",
+	"icons": [],
+	"start_url": ".",
+	"display": "standalone",
+	"theme_color": "#2563eb",
+	"background_color": "#ffffff"
+}

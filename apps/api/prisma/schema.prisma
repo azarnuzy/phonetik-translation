@@ -6,3 +6,179 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+enum WordPatternCategory {
+  ADJECTIVE
+  VERB
+  NOUN
+}
+
+enum QuizCategory {
+  TOPIC_VOCABULARY
+  PHRASAL_VERB
+  WORD_FORMATION
+  WORD_PATTERN
+  PREPOSITIONAL_PHRASE
+}
+
+model Discourse {
+  id          String   @id @default(uuid())
+  slug        String   @unique
+  title       String
+  description String
+  order       Int
+  comingSoon  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  vocabularyWords       VocabularyWord[]
+  phrasalVerbs          PhrasalVerb[]
+  wordFormationEntries  WordFormationEntry[]
+  wordPatterns          WordPattern[]
+  prepositionalPhrases  PrepositionalPhrase[]
+  quizQuestions         QuizQuestion[]
+  quizAttempts          UserQuizAttempt[]
+
+  @@map("discourses")
+}
+
+model VocabularyWord {
+  id          String   @id @default(uuid())
+  discourseId String
+  discourse   Discourse @relation(fields: [discourseId], references: [id], onDelete: Cascade)
+  word        String
+  wordClass   String?
+  meaning     String
+  example     String?
+  order       Int
+
+  progress UserWordProgress[]
+
+  @@index([discourseId])
+  @@map("vocabulary_words")
+}
+
+model PhrasalVerb {
+  id          String    @id @default(uuid())
+  discourseId String
+  discourse   Discourse @relation(fields: [discourseId], references: [id], onDelete: Cascade)
+  phrase      String
+  meaning     String
+  order       Int
+
+  @@index([discourseId])
+  @@map("phrasal_verbs")
+}
+
+model WordFormationEntry {
+  id          String    @id @default(uuid())
+  discourseId String
+  discourse   Discourse @relation(fields: [discourseId], references: [id], onDelete: Cascade)
+  baseWord    String
+  order       Int
+
+  forms WordFormationForm[]
+
+  @@index([discourseId])
+  @@map("word_formation_entries")
+}
+
+model WordFormationForm {
+  id           String              @id @default(uuid())
+  entryId      String
+  entry        WordFormationEntry  @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  form         String
+  partOfSpeech String
+
+  @@index([entryId])
+  @@map("word_formation_forms")
+}
+
+model WordPattern {
+  id          String              @id @default(uuid())
+  discourseId String
+  discourse   Discourse           @relation(fields: [discourseId], references: [id], onDelete: Cascade)
+  category    WordPatternCategory
+  pattern     String
+  meaning     String?
+  order       Int
+
+  @@index([discourseId])
+  @@map("word_patterns")
+}
+
+model PrepositionalPhrase {
+  id          String    @id @default(uuid())
+  discourseId String
+  discourse   Discourse @relation(fields: [discourseId], references: [id], onDelete: Cascade)
+  phrase      String
+  meaning     String
+  order       Int
+
+  @@index([discourseId])
+  @@map("prepositional_phrases")
+}
+
+model QuizQuestion {
+  id          String       @id @default(uuid())
+  discourseId String
+  discourse   Discourse    @relation(fields: [discourseId], references: [id], onDelete: Cascade)
+  category    QuizCategory
+  prompt      String
+  order       Int
+
+  options QuizOption[]
+
+  @@index([discourseId])
+  @@map("quiz_questions")
+}
+
+model QuizOption {
+  id         String       @id @default(uuid())
+  questionId String
+  question   QuizQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  text       String
+  isCorrect  Boolean      @default(false)
+
+  @@index([questionId])
+  @@map("quiz_options")
+}
+
+/// Progress for a single vocabulary word, keyed by the Supabase auth user id.
+/// No FK to auth.users -- Supabase auth lives in a different database.
+model UserWordProgress {
+  id               String         @id @default(uuid())
+  supabaseUserId   String
+  vocabularyWordId String
+  vocabularyWord   VocabularyWord @relation(fields: [vocabularyWordId], references: [id], onDelete: Cascade)
+  learned          Boolean        @default(false)
+  saved            Boolean        @default(false)
+  updatedAt        DateTime       @updatedAt
+
+  @@unique([supabaseUserId, vocabularyWordId])
+  @@index([supabaseUserId])
+  @@map("user_word_progress")
+}
+
+model UserQuizAttempt {
+  id             String    @id @default(uuid())
+  supabaseUserId String
+  discourseId    String
+  discourse      Discourse @relation(fields: [discourseId], references: [id], onDelete: Cascade)
+  score          Int
+  total          Int
+  createdAt      DateTime  @default(now())
+
+  @@index([supabaseUserId])
+  @@index([discourseId])
+  @@map("user_quiz_attempts")
+}
+
+model UserStats {
+  supabaseUserId  String   @id
+  points          Int      @default(0)
+  currentStreak   Int      @default(0)
+  lastActiveDate  DateTime?
+
+  @@map("user_stats")
+}
