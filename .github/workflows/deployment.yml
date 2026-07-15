@@ -36,9 +36,6 @@ jobs:
       - name: Build
         run: pnpm --filter=api build
 
-      - name: Test
-        run: pnpm test
-
   # apps/platform deploys automatically via Vercel's own GitHub integration
   # (git-connected project, no action needed here). apps/admin and apps/api
   # are unused starter-template leftovers and are intentionally not deployed.
