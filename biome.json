@@ -11,13 +11,13 @@
 			"**",
 			"!**/routeTree.gen.ts",
 			"!**/generated/prisma/*",
-			"!**/dist/**",
-			"!**/dist-ssr/**",
-			"!**/.output/**",
-			"!**/.vinxi/**",
-			"!**/.nitro/**",
-			"!**/.tanstack/**",
-			"!**/.wrangler/**"
+			"!**/dist",
+			"!**/dist-ssr",
+			"!**/.output",
+			"!**/.vinxi",
+			"!**/.nitro",
+			"!**/.tanstack",
+			"!**/.wrangler"
 		]
 	},
 	"formatter": {
