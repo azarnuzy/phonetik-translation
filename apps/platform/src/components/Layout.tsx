@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { AudioWaveform, Heart, History, Home } from "lucide-react";
+import { Heart, History, Home } from "lucide-react";
 import type { ReactNode } from "react";
 
 const navItems = [
@@ -14,9 +14,11 @@ export function Layout({ children }: { children: ReactNode }) {
 			<header className="border-b border-slate-200 bg-white">
 				<div className="mx-auto flex max-w-5xl items-center justify-between gap-2 px-3 py-3 sm:px-4">
 					<Link to="/" className="flex min-w-0 items-center gap-2">
-						<span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-600 text-white">
-							<AudioWaveform className="h-5 w-5" />
-						</span>
+						<img
+							src="/logo.png"
+							alt="Phonetik"
+							className="h-9 w-9 shrink-0 object-contain"
+						/>
 						<span className="min-w-0">
 							<span className="block truncate text-base font-semibold leading-tight text-slate-900">
 								Phonetik

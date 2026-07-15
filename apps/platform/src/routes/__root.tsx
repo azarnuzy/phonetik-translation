@@ -23,11 +23,41 @@ export const Route = createRootRoute({
 				content:
 					"Upload a photo of a paragraph and get its automatic phonetic (IPA) transcription.",
 			},
+			{
+				name: "theme-color",
+				content: "#7c3aed",
+			},
 		],
 		links: [
 			{
 				rel: "stylesheet",
 				href: appCss,
+			},
+			{
+				rel: "icon",
+				href: "/favicon.ico",
+				sizes: "48x48",
+			},
+			{
+				rel: "icon",
+				type: "image/png",
+				href: "/favicon-16x16.png",
+				sizes: "16x16",
+			},
+			{
+				rel: "icon",
+				type: "image/png",
+				href: "/favicon-32x32.png",
+				sizes: "32x32",
+			},
+			{
+				rel: "apple-touch-icon",
+				href: "/apple-touch-icon.png",
+				sizes: "180x180",
+			},
+			{
+				rel: "manifest",
+				href: "/manifest.json",
 			},
 		],
 	}),
