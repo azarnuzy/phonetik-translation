@@ -1,7 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import {
+	Camera,
 	CheckCircle2,
 	Circle,
+	Crop,
 	ImagePlus,
 	Loader2,
 	Sparkles,
@@ -14,7 +16,9 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { CameraCapture } from "@/components/CameraCapture";
 import { ConversionResult } from "@/components/ConversionResult";
+import { ImageCropper } from "@/components/ImageCropper";
 import { Layout } from "@/components/Layout";
 import { processImage, setFavorite } from "@/lib/api";
 import type { Conversion } from "@/lib/types";
@@ -47,6 +51,8 @@ function BerandaPage() {
 	const [visualStep, setVisualStep] = useState(0);
 	const [conversion, setConversion] = useState<Conversion | null>(null);
 	const [favoriteBusy, setFavoriteBusy] = useState(false);
+	const [cameraOpen, setCameraOpen] = useState(false);
+	const [cropTarget, setCropTarget] = useState<File | null>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 
 	useEffect(() => {
@@ -56,6 +62,12 @@ function BerandaPage() {
 	}, [previewUrl]);
 
 	function acceptFile(candidate: File) {
+		if (previewUrl) URL.revokeObjectURL(previewUrl);
+		setFile(candidate);
+		setPreviewUrl(URL.createObjectURL(candidate));
+	}
+
+	function beginCrop(candidate: File) {
 		if (!ALLOWED_TYPES.includes(candidate.type)) {
 			setValidationError("Format tidak didukung. Gunakan JPG, PNG, atau WebP.");
 			return;
@@ -65,20 +77,29 @@ function BerandaPage() {
 			return;
 		}
 		setValidationError(null);
-		if (previewUrl) URL.revokeObjectURL(previewUrl);
-		setFile(candidate);
-		setPreviewUrl(URL.createObjectURL(candidate));
+		setCropTarget(candidate);
 	}
 
 	function handleInputChange(e: ChangeEvent<HTMLInputElement>) {
 		const candidate = e.target.files?.[0];
-		if (candidate) acceptFile(candidate);
+		if (candidate) beginCrop(candidate);
+		e.target.value = "";
 	}
 
 	function handleDrop(e: DragEvent<HTMLButtonElement>) {
 		e.preventDefault();
 		const candidate = e.dataTransfer.files?.[0];
-		if (candidate) acceptFile(candidate);
+		if (candidate) beginCrop(candidate);
+	}
+
+	function handleCameraCapture(captured: File) {
+		setCameraOpen(false);
+		beginCrop(captured);
+	}
+
+	function handleCropConfirm(cropped: File) {
+		setCropTarget(null);
+		acceptFile(cropped);
 	}
 
 	async function handleProcess() {
@@ -138,6 +159,23 @@ function BerandaPage() {
 					onInputChange={handleInputChange}
 					onDrop={handleDrop}
 					onProcess={handleProcess}
+					onOpenCamera={() => setCameraOpen(true)}
+					onRecrop={() => file && setCropTarget(file)}
+				/>
+			)}
+
+			{cameraOpen && (
+				<CameraCapture
+					onCapture={handleCameraCapture}
+					onClose={() => setCameraOpen(false)}
+				/>
+			)}
+
+			{cropTarget && (
+				<ImageCropper
+					file={cropTarget}
+					onConfirm={handleCropConfirm}
+					onCancel={() => setCropTarget(null)}
 				/>
 			)}
 
@@ -180,6 +218,8 @@ function UploadStep({
 	onInputChange,
 	onDrop,
 	onProcess,
+	onOpenCamera,
+	onRecrop,
 }: {
 	file: File | null;
 	previewUrl: string | null;
@@ -188,6 +228,8 @@ function UploadStep({
 	onInputChange: (e: ChangeEvent<HTMLInputElement>) => void;
 	onDrop: (e: DragEvent<HTMLButtonElement>) => void;
 	onProcess: () => void;
+	onOpenCamera: () => void;
+	onRecrop: () => void;
 }) {
 	return (
 		<div className="space-y-5">
@@ -242,7 +284,16 @@ function UploadStep({
 			</button>
 
 			{file && !validationError && (
-				<p className="text-center text-xs text-slate-400">{file.name}</p>
+				<div className="flex items-center justify-center gap-2 text-xs text-slate-400">
+					<span className="truncate">{file.name}</span>
+					<button
+						type="button"
+						onClick={onRecrop}
+						className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 font-medium text-violet-600 hover:bg-violet-50"
+					>
+						<Crop className="h-3 w-3" /> Crop Ulang
+					</button>
+				</div>
 			)}
 			{validationError && (
 				<p className="text-center text-sm text-red-600">{validationError}</p>
@@ -254,13 +305,22 @@ function UploadStep({
 				<span className="h-px flex-1 bg-slate-200" />
 			</div>
 
-			<button
-				type="button"
-				onClick={() => fileInputRef.current?.click()}
-				className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-			>
-				Pilih dari Galeri
-			</button>
+			<div className="grid grid-cols-2 gap-3">
+				<button
+					type="button"
+					onClick={() => fileInputRef.current?.click()}
+					className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+				>
+					<ImagePlus className="h-4 w-4" /> Pilih dari Galeri
+				</button>
+				<button
+					type="button"
+					onClick={onOpenCamera}
+					className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+				>
+					<Camera className="h-4 w-4" /> Ambil Foto
+				</button>
+			</div>
 
 			<div>
 				<label
