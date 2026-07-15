@@ -3,7 +3,7 @@ import { createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 
 import appCss from "../styles.css?url";
-import "@feedbase/ui/globals.css";
+import "@phonetik/ui/globals.css";
 
 export const Route = createRootRoute({
 	head: () => ({
@@ -16,7 +16,12 @@ export const Route = createRootRoute({
 				content: "width=device-width, initial-scale=1",
 			},
 			{
-				title: "TanStack Start Starter",
+				title: "Phonetik - From Text to Phonetic",
+			},
+			{
+				name: "description",
+				content:
+					"Upload a photo of a paragraph and get its automatic phonetic (IPA) transcription.",
 			},
 		],
 		links: [

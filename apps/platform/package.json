@@ -4,13 +4,14 @@
 	"type": "module",
 	"scripts": {
 		"dev": "pnpm with-env vite dev --port 3000",
-		"build": "pnpm with-env vite build",
+		"build": "pnpm --filter=@phonetik/ui run build && pnpm with-env vite build",
 		"preview": "vite preview",
 		"test": "vitest run",
 		"with-env": "dotenv -e ../../.env --"
 	},
 	"dependencies": {
-		"@feedbase/ui": "workspace:*",
+		"@phonetik/ui": "workspace:*",
+		"@supabase/supabase-js": "^2.58.0",
 		"@tailwindcss/vite": "^4.0.6",
 		"@tanstack/react-devtools": "^0.7.0",
 		"@tanstack/react-router": "^1.132.0",
