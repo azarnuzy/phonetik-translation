@@ -1,5 +1,6 @@
-import { Copy, Download, Heart, Square, Volume2 } from "lucide-react";
+import { Copy, Download, Heart, Mic, Square, Volume2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { PronunciationPractice } from "@/components/PronunciationPractice";
 import {
 	copyToClipboard,
 	downloadTextFile,
@@ -25,6 +26,7 @@ export function ConversionResult({
 	const [speakingTarget, setSpeakingTarget] = useState<"all" | number | null>(
 		null,
 	);
+	const [practiceIndex, setPracticeIndex] = useState<number | null>(null);
 	const speechTokenRef = useRef(0);
 
 	const lines = conversion.ipa_lines;
@@ -137,29 +139,53 @@ export function ConversionResult({
 				</h3>
 				<ul className="space-y-3">
 					{lines.map((line, i) => (
-						<li
-							key={`${i}-${line.text.slice(0, 16)}`}
-							className="flex items-start justify-between gap-3"
-						>
-							<span className="font-mono text-base text-violet-700">
-								{line.ipa}
-							</span>
-							<button
-								type="button"
-								title={
-									speakingTarget === i
-										? "Klik untuk menghentikan"
-										: "Klik untuk mendengarkan"
-								}
-								onClick={() => handleSpeakLine(i, line.text)}
-								className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-600 hover:bg-violet-200"
-							>
-								{speakingTarget === i ? (
-									<Square className="h-4 w-4 fill-current" />
-								) : (
-									<Volume2 className="h-4 w-4" />
-								)}
-							</button>
+						<li key={`${i}-${line.text.slice(0, 16)}`} className="space-y-2">
+							<div className="flex items-start justify-between gap-3">
+								<span className="font-mono text-base text-violet-700">
+									{line.ipa}
+								</span>
+								<div className="flex shrink-0 items-center gap-1.5">
+									<button
+										type="button"
+										title={
+											speakingTarget === i
+												? "Klik untuk menghentikan"
+												: "Klik untuk mendengarkan"
+										}
+										onClick={() => handleSpeakLine(i, line.text)}
+										className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-100 text-violet-600 hover:bg-violet-200"
+									>
+										{speakingTarget === i ? (
+											<Square className="h-4 w-4 fill-current" />
+										) : (
+											<Volume2 className="h-4 w-4" />
+										)}
+									</button>
+									<button
+										type="button"
+										title="Latih Pengucapan"
+										onClick={() =>
+											setPracticeIndex(practiceIndex === i ? null : i)
+										}
+										className={
+											practiceIndex === i
+												? "flex h-8 w-8 items-center justify-center rounded-lg bg-violet-600 text-white"
+												: "flex h-8 w-8 items-center justify-center rounded-lg bg-violet-100 text-violet-600 hover:bg-violet-200"
+										}
+									>
+										<Mic className="h-4 w-4" />
+									</button>
+								</div>
+							</div>
+
+							{practiceIndex === i && (
+								<PronunciationPractice
+									conversionId={conversion.id}
+									lineIndex={i}
+									text={line.text}
+									language={conversion.language}
+								/>
+							)}
 						</li>
 					))}
 				</ul>
