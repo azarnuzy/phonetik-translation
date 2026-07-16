@@ -75,7 +75,7 @@ export function OverallPronunciationPractice({
 				</p>
 			</div>
 
-			<div className="flex gap-2">
+			<div className="flex gap-1 rounded-lg border border-slate-200 bg-slate-100 p-1">
 				<ModeButton
 					active={mode === "record"}
 					icon={Mic}
@@ -154,11 +154,12 @@ function ModeButton({
 	return (
 		<button
 			type="button"
+			aria-pressed={active}
 			onClick={onClick}
 			className={
 				active
-					? "flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white"
-					: "flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+					? "flex flex-1 cursor-default items-center justify-center gap-1.5 rounded-md bg-white px-3 py-1.5 text-sm font-medium text-violet-700 shadow-sm"
+					: "flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-slate-500 hover:text-slate-700"
 			}
 		>
 			<Icon className="h-4 w-4" />
