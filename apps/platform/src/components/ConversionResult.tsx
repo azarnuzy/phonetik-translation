@@ -1,5 +1,6 @@
 import { Copy, Download, Heart, Mic, Square, Volume2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { OverallPronunciationPractice } from "@/components/OverallPronunciationPractice";
 import { PronunciationPractice } from "@/components/PronunciationPractice";
 import {
 	copyToClipboard,
@@ -209,6 +210,8 @@ export function ConversionResult({
 					{conversion.original_text}
 				</p>
 			</div>
+
+			<OverallPronunciationPractice conversion={conversion} />
 
 			<div className="flex items-end gap-3">
 				<div className="flex-1">

@@ -2,20 +2,22 @@ import { AlertCircle, Mic, RotateCcw, Square } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { pickSupportedMimeType } from "@/lib/audio";
 
-const MAX_DURATION_SECONDS = 20;
+const DEFAULT_MAX_DURATION_SECONDS = 20;
 
 type Phase = "idle" | "requesting" | "recording" | "recorded" | "error";
 
 interface AudioRecorderProps {
-	onRecorded: (blob: Blob, mimeType: string) => void;
+	onRecorded: (blob: Blob, mimeType: string, durationSeconds: number) => void;
 	onReRecord?: () => void;
 	disabled?: boolean;
+	maxDurationSeconds?: number;
 }
 
 export function AudioRecorder({
 	onRecorded,
 	onReRecord,
 	disabled,
+	maxDurationSeconds = DEFAULT_MAX_DURATION_SECONDS,
 }: AudioRecorderProps) {
 	const [phase, setPhase] = useState<Phase>("idle");
 	const [error, setError] = useState<string | null>(null);
@@ -28,6 +30,8 @@ export function AudioRecorder({
 	const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 	const previewUrlRef = useRef<string | null>(null);
 	previewUrlRef.current = previewUrl;
+	const elapsedRef = useRef(0);
+	elapsedRef.current = elapsed;
 
 	useEffect(() => {
 		return () => {
@@ -75,7 +79,7 @@ export function AudioRecorder({
 				const url = URL.createObjectURL(blob);
 				setPreviewUrl(url);
 				setPhase("recorded");
-				onRecorded(blob, mimeType);
+				onRecorded(blob, mimeType, elapsedRef.current);
 			};
 
 			recorder.start();
@@ -84,7 +88,7 @@ export function AudioRecorder({
 			intervalRef.current = setInterval(() => {
 				setElapsed((prev) => {
 					const next = prev + 1;
-					if (next >= MAX_DURATION_SECONDS) {
+					if (next >= maxDurationSeconds) {
 						recorder.stop();
 					}
 					return next;
@@ -126,7 +130,7 @@ export function AudioRecorder({
 				className="flex w-full items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700"
 			>
 				<Square className="h-4 w-4 fill-current" />
-				Berhenti ({elapsed}s / {MAX_DURATION_SECONDS}s)
+				Berhenti ({elapsed}s / {maxDurationSeconds}s)
 			</button>
 		);
 	}

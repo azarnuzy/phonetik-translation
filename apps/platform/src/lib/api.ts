@@ -1,7 +1,11 @@
 import { blobToBase64 } from "./audio";
 import { compressImageToBase64 } from "./image";
 import { ensureAnonymousSession, supabase } from "./supabase";
-import type { Conversion, PronunciationAttempt } from "./types";
+import type {
+	Conversion,
+	PronunciationAttempt,
+	PronunciationScope,
+} from "./types";
 
 async function extractFunctionErrorMessage(error: {
 	message: string;
@@ -79,10 +83,12 @@ export async function deleteConversion(id: string): Promise<void> {
 
 export async function assessPronunciation(params: {
 	conversionId?: string;
-	lineIndex: number;
+	scope: PronunciationScope;
+	lineIndex?: number;
 	expectedText: string;
 	audioBlob: Blob;
 	mimeType: string;
+	durationSeconds: number;
 }): Promise<PronunciationAttempt> {
 	await ensureAnonymousSession();
 	const audioBase64 = await blobToBase64(params.audioBlob);
@@ -93,10 +99,12 @@ export async function assessPronunciation(params: {
 	}>("assess-pronunciation", {
 		body: {
 			conversionId: params.conversionId,
+			scope: params.scope,
 			lineIndex: params.lineIndex,
 			expectedText: params.expectedText,
 			audioBase64,
 			mimeType: params.mimeType,
+			durationSeconds: params.durationSeconds,
 		},
 	});
 
