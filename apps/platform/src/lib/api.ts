@@ -86,6 +86,7 @@ export async function assessPronunciation(params: {
 	scope: PronunciationScope;
 	lineIndex?: number;
 	expectedText: string;
+	language?: string;
 	audioBlob: Blob;
 	mimeType: string;
 	durationSeconds: number;
@@ -102,6 +103,7 @@ export async function assessPronunciation(params: {
 			scope: params.scope,
 			lineIndex: params.lineIndex,
 			expectedText: params.expectedText,
+			language: params.language,
 			audioBase64,
 			mimeType: params.mimeType,
 			durationSeconds: params.durationSeconds,

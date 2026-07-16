@@ -164,15 +164,30 @@ function computeScores(
 	return { accuracyScore, completenessScore, overallScore, fluencyScore };
 }
 
+// Whisper only auto-detects the spoken language from the first few seconds
+// of audio. On lossy, low-bitrate recordings (e.g. WhatsApp voice notes) that
+// detection is unreliable, and Whisper falls back to transcribing English
+// speech as phonetically similar words in the wrong language entirely. Pinning
+// the expected language avoids that failure mode.
+function toWhisperLanguageCode(language: string | undefined): string | null {
+	if (!language) return null;
+	const code = language.split("-")[0]?.toLowerCase();
+	return code || null;
+}
+
 async function transcribeAudio(
 	bytes: Uint8Array,
 	mimeType: string,
 	ext: string,
+	language: string | null,
 ): Promise<string> {
 	const form = new FormData();
 	form.append("file", new Blob([bytes], { type: mimeType }), `audio.${ext}`);
 	form.append("model", GROQ_MODEL);
 	form.append("response_format", "json");
+	if (language) {
+		form.append("language", language);
+	}
 
 	const res = await fetch(
 		"https://api.groq.com/openai/v1/audio/transcriptions",
@@ -253,6 +268,9 @@ Deno.serve(async (req: Request) => {
 			| "overall";
 		const lineIndex = body?.lineIndex as number | undefined;
 		const expectedText = body?.expectedText as string | undefined;
+		const language = toWhisperLanguageCode(
+			body?.language as string | undefined,
+		);
 		const audioBase64 = body?.audioBase64 as string | undefined;
 		const mimeType = (body?.mimeType as string | undefined) ?? "audio/webm";
 		const durationSeconds = body?.durationSeconds as number | undefined;
@@ -277,7 +295,7 @@ Deno.serve(async (req: Request) => {
 
 		let transcript: string;
 		try {
-			transcript = await transcribeAudio(bytes, mimeType, ext);
+			transcript = await transcribeAudio(bytes, mimeType, ext, language);
 		} catch (err) {
 			const message =
 				err instanceof Error ? err.message : "Speech-to-text failed";
