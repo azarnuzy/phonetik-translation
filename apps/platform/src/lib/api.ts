@@ -7,6 +7,7 @@ import type {
 	PronunciationScope,
 } from "./types";
 
+//
 async function extractFunctionErrorMessage(error: {
 	message: string;
 	context?: unknown;
