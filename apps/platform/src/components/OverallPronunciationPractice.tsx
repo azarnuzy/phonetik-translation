@@ -49,6 +49,7 @@ export function OverallPronunciationPractice({
 				conversionId: conversion.id,
 				scope: "overall",
 				expectedText: conversion.original_text,
+				language: conversion.language,
 				audioBlob: audio.blob,
 				mimeType: audio.mimeType,
 				durationSeconds: audio.durationSeconds,

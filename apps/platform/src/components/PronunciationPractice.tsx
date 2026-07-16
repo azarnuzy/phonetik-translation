@@ -44,6 +44,7 @@ export function PronunciationPractice({
 				scope: "line",
 				lineIndex,
 				expectedText: text,
+				language,
 				audioBlob: recording.blob,
 				mimeType: recording.mimeType,
 				durationSeconds: recording.durationSeconds,
