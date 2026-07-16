@@ -15,6 +15,9 @@ const GROQ_MODEL = Deno.env.get("GROQ_MODEL") ?? "whisper-large-v3-turbo";
 // so cap attempts per user per rolling 24h window, same pattern as process-image.
 const DAILY_LIMIT = 50;
 
+// Natural reading pace for the fluency heuristic (see computeScores below).
+const IDEAL_WORDS_PER_MINUTE = 130;
+
 const EXT_BY_MIME: Record<string, string> = {
 	"audio/webm": "webm",
 	"audio/ogg": "ogg",
@@ -23,9 +26,11 @@ const EXT_BY_MIME: Record<string, string> = {
 	"audio/wav": "wav",
 };
 
+type WordStatus = "correct" | "mispronounced" | "omitted";
+
 interface WordResult {
 	word: string;
-	correct: boolean;
+	status: WordStatus;
 }
 
 function tokenize(text: string): string[] {
@@ -36,42 +41,127 @@ function normalizeWord(word: string): string {
 	return word.toLowerCase().replace(/[^\p{L}\p{N}']/gu, "");
 }
 
-// Aligns expected words against the transcribed words via LCS, so words the
-// speaker actually said (in roughly the right order) count as correct even
-// if the transcript has extra/missing/reordered words around them.
-function alignWords(expected: string[], spoken: string[]): boolean[] {
-	const a = expected.map(normalizeWord);
-	const b = spoken.map(normalizeWord);
+type Op =
+	| { type: "match" | "sub" | "del"; expectedIdx: number }
+	| { type: "ins"; spokenIdx: number };
+
+// Standard word-level edit-distance alignment (the same technique used to
+// compute Word Error Rate in speech recognition), classifying every expected
+// word as correct / mispronounced (substitution) / omitted (deletion), and
+// every unmatched spoken word as an "extra" (insertion) not tied to the
+// reference text.
+function alignWords(
+	expectedOriginal: string[],
+	spokenOriginal: string[],
+): { wordResults: WordResult[]; extraWords: string[] } {
+	const a = expectedOriginal.map(normalizeWord);
+	const b = spokenOriginal.map(normalizeWord);
 	const n = a.length;
 	const m = b.length;
 
 	const dp: number[][] = Array.from({ length: n + 1 }, () =>
 		new Array(m + 1).fill(0),
 	);
-	for (let i = n - 1; i >= 0; i--) {
-		for (let j = m - 1; j >= 0; j--) {
+	for (let i = 0; i <= n; i++) dp[i][0] = i;
+	for (let j = 0; j <= m; j++) dp[0][j] = j;
+	for (let i = 1; i <= n; i++) {
+		for (let j = 1; j <= m; j++) {
 			dp[i][j] =
-				a[i] && a[i] === b[j]
-					? dp[i + 1][j + 1] + 1
-					: Math.max(dp[i + 1][j], dp[i][j + 1]);
+				a[i - 1] && a[i - 1] === b[j - 1]
+					? dp[i - 1][j - 1]
+					: 1 + Math.min(dp[i - 1][j - 1], dp[i - 1][j], dp[i][j - 1]);
 		}
 	}
 
-	const matched = new Array(n).fill(false);
-	let i = 0;
-	let j = 0;
-	while (i < n && j < m) {
-		if (a[i] && a[i] === b[j]) {
-			matched[i] = true;
-			i++;
-			j++;
-		} else if (dp[i + 1][j] >= dp[i][j + 1]) {
-			i++;
+	const ops: Op[] = [];
+	let i = n;
+	let j = m;
+	while (i > 0 || j > 0) {
+		if (
+			i > 0 &&
+			j > 0 &&
+			a[i - 1] === b[j - 1] &&
+			dp[i][j] === dp[i - 1][j - 1]
+		) {
+			ops.push({ type: "match", expectedIdx: i - 1 });
+			i--;
+			j--;
+		} else if (i > 0 && j > 0 && dp[i][j] === dp[i - 1][j - 1] + 1) {
+			ops.push({ type: "sub", expectedIdx: i - 1 });
+			i--;
+			j--;
+		} else if (i > 0 && dp[i][j] === dp[i - 1][j] + 1) {
+			ops.push({ type: "del", expectedIdx: i - 1 });
+			i--;
 		} else {
-			j++;
+			ops.push({ type: "ins", spokenIdx: j - 1 });
+			j--;
 		}
 	}
-	return matched;
+	ops.reverse();
+
+	const wordResults: WordResult[] = [];
+	const extraWords: string[] = [];
+	for (const op of ops) {
+		if (op.type === "match") {
+			wordResults.push({
+				word: expectedOriginal[op.expectedIdx],
+				status: "correct",
+			});
+		} else if (op.type === "sub") {
+			wordResults.push({
+				word: expectedOriginal[op.expectedIdx],
+				status: "mispronounced",
+			});
+		} else if (op.type === "del") {
+			wordResults.push({
+				word: expectedOriginal[op.expectedIdx],
+				status: "omitted",
+			});
+		} else {
+			extraWords.push(spokenOriginal[op.spokenIdx]);
+		}
+	}
+
+	return { wordResults, extraWords };
+}
+
+// Mirrors the common pronunciation-assessment breakdown (Azure Pronunciation
+// Assessment, Speechace, etc.): Accuracy (of the words you attempted, how many
+// were right), Completeness (how much of the reference text you attempted at
+// all), Fluency (speaking pace vs. a natural reading pace), and an Overall
+// score combining accuracy + completeness.
+function computeScores(
+	wordResults: WordResult[],
+	durationSeconds: number | null,
+) {
+	const total = wordResults.length;
+	const correct = wordResults.filter((w) => w.status === "correct").length;
+	const mispronounced = wordResults.filter(
+		(w) => w.status === "mispronounced",
+	).length;
+	const attempted = correct + mispronounced;
+
+	const accuracyScore =
+		attempted > 0 ? Math.round((correct / attempted) * 100) : 0;
+	const completenessScore =
+		total > 0 ? Math.round((attempted / total) * 100) : 0;
+	const overallScore = total > 0 ? Math.round((correct / total) * 100) : 0;
+
+	let fluencyScore: number | null = null;
+	if (durationSeconds && durationSeconds > 0 && total > 0) {
+		const wpm = (total / durationSeconds) * 60;
+		const ratio = wpm / IDEAL_WORDS_PER_MINUTE;
+		if (ratio >= 0.7 && ratio <= 1.4) {
+			fluencyScore = 100;
+		} else if (ratio < 0.7) {
+			fluencyScore = Math.max(0, Math.round((ratio / 0.7) * 100));
+		} else {
+			fluencyScore = Math.max(0, Math.round(100 - (ratio - 1.4) * 80));
+		}
+	}
+
+	return { accuracyScore, completenessScore, overallScore, fluencyScore };
 }
 
 async function transcribeAudio(
@@ -158,20 +248,23 @@ Deno.serve(async (req: Request) => {
 
 		const body = await req.json().catch(() => null);
 		const conversionId = body?.conversionId as string | undefined;
+		const scope = ((body?.scope as string | undefined) ?? "line") as
+			| "line"
+			| "overall";
 		const lineIndex = body?.lineIndex as number | undefined;
 		const expectedText = body?.expectedText as string | undefined;
 		const audioBase64 = body?.audioBase64 as string | undefined;
 		const mimeType = (body?.mimeType as string | undefined) ?? "audio/webm";
+		const durationSeconds = body?.durationSeconds as number | undefined;
 
-		if (
-			!expectedText?.trim() ||
-			!audioBase64 ||
-			typeof lineIndex !== "number"
-		) {
-			return json(
-				{ error: "expectedText, lineIndex and audioBase64 are required" },
-				400,
-			);
+		if (scope !== "line" && scope !== "overall") {
+			return json({ error: "scope must be 'line' or 'overall'" }, 400);
+		}
+		if (scope === "line" && typeof lineIndex !== "number") {
+			return json({ error: "lineIndex is required for scope 'line'" }, 400);
+		}
+		if (!expectedText?.trim() || !audioBase64) {
+			return json({ error: "expectedText and audioBase64 are required" }, 400);
 		}
 
 		const expectedWords = tokenize(expectedText);
@@ -192,14 +285,9 @@ Deno.serve(async (req: Request) => {
 		}
 
 		const spokenWords = tokenize(transcript);
-		const matched = alignWords(expectedWords, spokenWords);
-		const wordResults: WordResult[] = expectedWords.map((word, idx) => ({
-			word,
-			correct: matched[idx],
-		}));
-		const accuracyScore = Math.round(
-			(matched.filter(Boolean).length / expectedWords.length) * 100,
-		);
+		const { wordResults, extraWords } = alignWords(expectedWords, spokenWords);
+		const { accuracyScore, completenessScore, overallScore, fluencyScore } =
+			computeScores(wordResults, durationSeconds ?? null);
 
 		const audioPath = `${user.id}/${crypto.randomUUID()}.${ext}`;
 		const { error: uploadError } = await supabase.storage
@@ -216,11 +304,17 @@ Deno.serve(async (req: Request) => {
 			.insert({
 				user_id: user.id,
 				conversion_id: conversionId ?? null,
-				line_index: lineIndex,
+				scope,
+				line_index: scope === "line" ? lineIndex : null,
 				expected_text: expectedText,
 				transcript,
 				word_results: wordResults,
+				extra_words: extraWords,
 				accuracy_score: accuracyScore,
+				completeness_score: completenessScore,
+				overall_score: overallScore,
+				fluency_score: fluencyScore,
+				duration_seconds: durationSeconds ?? null,
 				audio_path: audioPath,
 			})
 			.select()
