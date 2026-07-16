@@ -1,6 +1,7 @@
+import { blobToBase64 } from "./audio";
 import { compressImageToBase64 } from "./image";
 import { ensureAnonymousSession, supabase } from "./supabase";
-import type { Conversion } from "./types";
+import type { Conversion, PronunciationAttempt } from "./types";
 
 async function extractFunctionErrorMessage(error: {
 	message: string;
@@ -74,4 +75,37 @@ export async function setFavorite(
 export async function deleteConversion(id: string): Promise<void> {
 	const { error } = await supabase.from("conversions").delete().eq("id", id);
 	if (error) throw error;
+}
+
+export async function assessPronunciation(params: {
+	conversionId?: string;
+	lineIndex: number;
+	expectedText: string;
+	audioBlob: Blob;
+	mimeType: string;
+}): Promise<PronunciationAttempt> {
+	await ensureAnonymousSession();
+	const audioBase64 = await blobToBase64(params.audioBlob);
+
+	const { data, error } = await supabase.functions.invoke<{
+		attempt?: PronunciationAttempt;
+		error?: string;
+	}>("assess-pronunciation", {
+		body: {
+			conversionId: params.conversionId,
+			lineIndex: params.lineIndex,
+			expectedText: params.expectedText,
+			audioBase64,
+			mimeType: params.mimeType,
+		},
+	});
+
+	if (error) {
+		throw new Error(await extractFunctionErrorMessage(error));
+	}
+	if (!data?.attempt) {
+		throw new Error(data?.error ?? "Gagal menilai pengucapan.");
+	}
+
+	return data.attempt;
 }
