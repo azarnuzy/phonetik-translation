@@ -16,13 +16,23 @@ const OPENROUTER_MODEL =
 // conversions per anonymous user per rolling 24h window.
 const DAILY_LIMIT = 30;
 
+const PHONEMIC_KEY = `Vowels & diphthongs (as in Longman's American English pronunciation key):
+i (see), ɪ (sit), ɛ (ten), æ (cat), ɑ (father, hot), ɔ (law, dog), ʊ (put), u (too), ʌ (cup), ə (about), ər (teacher, bird), eɪ (day), aɪ (my), ɔɪ (boy), aʊ (how), oʊ (go)
+Consonants: p, b, t, d, k, ɡ, tʃ, dʒ, f, v, θ, ð, s, z, ʃ, ʒ, h, m, n, ŋ, l, r, j, w`;
+
 const PROMPT = `You are an expert English phonetics transcriber embedded in an app called Phonetik.
 You will be given a photo of a paragraph of English text (e.g. a page from a book).
 
 Do all of the following:
 1. Read (OCR) all the text visible in the image, exactly as written, preserving punctuation.
 2. Split the text into short lines the way a reader would naturally pause: roughly one clause or short sentence per line, similar to line breaks in a poem reading.
-3. For each line, produce a broad IPA phonetic transcription of its pronunciation in General American English, using standard IPA symbols and stress marks (e.g. ˈ for primary stress, ˌ for secondary stress), with words separated by single spaces.
+3. For each line, produce a broad IPA phonetic transcription of its pronunciation in General American English.
+
+Use exactly the phonemic symbol set below (the same convention used by Longman's American English learner's dictionaries) and no others — do not use British symbols (ɒ, ɜː, ɐ), length marks (ː), or the rhotic-vowel ligatures ɝ/ɚ (write the r-colored central vowel as "ər" instead).
+
+${PHONEMIC_KEY}
+
+Stress marks: place ˈ immediately before a primary-stressed syllable and ˌ immediately before a secondary-stressed syllable, exactly as a pronunciation dictionary would (e.g. /ˈɔθəraɪz/, /ˌɔtəˈmætɪk/). Separate words with single spaces. Transcribe the same word the same way every time it recurs within the response.
 
 Respond with ONLY strict JSON, no markdown code fences, no commentary, matching exactly this shape:
 {"originalText": "the full OCR'd text as one string with original line breaks as \\n", "lines": [{"text": "line of original text", "ipa": "IPA transcription of that line"}]}`;
@@ -50,6 +60,18 @@ function stripCodeFence(raw: string): string {
 	return match ? match[1].trim() : trimmed;
 }
 
+// Some models still drift into British/dictionary-agnostic IPA despite the
+// prompt's symbol table. Normalize the common deviations so output stays
+// consistent with the Longman American English phonemic key.
+function normalizeIpa(ipa: string): string {
+	return ipa
+		.replace(/[ɝɚ]/g, "ər")
+		.replace(/ː/g, "")
+		.replace(/ɒ/g, "ɑ")
+		.replace(/ɐ/g, "ʌ")
+		.replace(/ɜ/g, "ə");
+}
+
 function validateConversionShape(parsed: unknown): ParsedConversion | null {
 	if (!parsed || typeof parsed !== "object") return null;
 	const p = parsed as { originalText?: unknown; lines?: unknown };
@@ -69,7 +91,7 @@ function validateConversionShape(parsed: unknown): ParsedConversion | null {
 			return null;
 		}
 		const text = (item as { text: string }).text.trim();
-		const ipa = (item as { ipa: string }).ipa.trim();
+		const ipa = normalizeIpa((item as { ipa: string }).ipa.trim());
 		if (!text || !ipa) return null;
 		lines.push({ text, ipa });
 	}
